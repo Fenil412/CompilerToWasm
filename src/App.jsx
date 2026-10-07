@@ -1,5 +1,233 @@
-import React,{useMemo,useState} from 'react'; import {compile,grammar,runWat} from './compiler.js';
-const samples=[['Arithmetic','int a;\nint b;\na = 10;\nb = a + 20 * 2;\nprint(b);'],['If else','int score;\nscore = 75;\nif (score >= 50) { print(score); } else { score = 0; }'],['While loop','int n;\nn = 1;\nwhile (n <= 4) { print(n); n = n + 1; }'],['Constant folding','int total;\ntotal = 10 + 20 * 2;\nprint(total);'],['Undeclared variable','int a;\nb = 10;'],['Redeclaration','int x;\nfloat x;'],['Syntax recovery','int a\na = 2;\nprint(a);'],['Nested expression','int x;\nx = (3 + 4) * (8 - 2);\nprint(x);'],['Register pressure','int a; int b; int c; int d; int e; a=1; b=2; c=3; d=4; e=(a+b)*(c+d); print(e);'],['Comments','// comment\nint value; /* declaration */\nvalue = 6;\nprint(value);']];
-const tabs=['Tokens','Symbol table','AST','Errors','TAC','Optimized TAC','Interference','Registers','Assembly','WAT','Run'];
-function Box({children}){return <pre className="codebox">{children||'—'}</pre>}
-export default function App(){const [source,setSource]=useState(samples[0][1]),[selected,setSelected]=useState('Arithmetic'),[result,setResult]=useState(null),[active,setActive]=useState('Tokens'),[output,setOutput]=useState([]),[running,setRunning]=useState(false),[status,setStatus]=useState('Ready');const compileNow=()=>{const r=compile(source);setResult(r);setOutput([]);setStatus(r.valid?'Compiled successfully':`${r.errors.length} issue(s) found`)};const rendered=useMemo(()=>{if(!result)return 'Compile the source to inspect this stage.';switch(active){case'Tokens':return JSON.stringify(result.tokens,null,2);case'Symbol table':return JSON.stringify(result.symbols,null,2);case'AST':return JSON.stringify(result.ast,null,2);case'Errors':return result.errors.map(e=>`${e.kind} error · line ${e.line}, column ${e.column}\n${e.message}`).join('\n\n')||'No lexical, syntax, or semantic errors.';case'TAC':return result.tac.join('\n');case'Optimized TAC':return `Original TAC → Optimized TAC (constant folding / propagation)\n\n${result.optimized.join('\n')}`;case'Interference':return JSON.stringify({registerCount:result.allocation.registerCount,liveRanges:result.allocation.liveRanges,edges:result.allocation.edges},null,2);case'Registers':return Object.entries(result.allocation.colors).map(([v,r])=>`${v.padEnd(12)} ${r}`).join('\n')||'No values to allocate.';case'Assembly':return result.assembly;case'WAT':return result.wat;case'Run':return output.length?`Output: ${output.join(', ')}`:'Select Run WebAssembly to execute the generated module.';default:return ''}},[result,active,output]);async function run(){if(!result)compileNow();const r=result||compile(source);if(!r.valid){setStatus('Fix compiler errors before running');return}setRunning(true);try{const values=await runWat(r.wat);setOutput(values);setActive('Run');setStatus('WebAssembly executed in browser')}catch(e){setStatus(`Wasm runtime error: ${e.message}`)}finally{setRunning(false)}}return <main><header><div><div className="eyebrow">PRINCIPLES OF COMPILER DESIGN · 4CS501CC25</div><h1>Compiler<span>to</span>Wasm</h1><p>Explore a real source-driven compiler pipeline, from tokens to browser-executed WebAssembly.</p></div><div className="status"><i className={result?.valid?'ok':''}/>{status}</div></header><section className="toolbar"><label>Example <select value={selected} onChange={e=>{setSelected(e.target.value);setSource(samples.find(x=>x[0]===e.target.value)?.[1]||'')}}>{samples.map(([n])=><option key={n}>{n}</option>)}</select></label><div className="buttons"><button className="primary" onClick={compileNow}>Compile</button><button onClick={run} disabled={running}>{running?'Running…':'Run WebAssembly'}</button><button onClick={()=>{setSource('');setResult(null);setOutput([]);setStatus('Ready')}}>Clear</button></div></section><section className="workspace"><div className="editor panel"><div className="panel-title"><span>01 / SOURCE PROGRAM</span><span className="lang">MiniLang</span></div><textarea spellCheck="false" value={source} onChange={e=>setSource(e.target.value)} aria-label="MiniLang source code"/><div className="grammar"><strong>Supported grammar</strong><pre>{grammar}</pre></div></div><div className="output panel"><div className="panel-title"><span>02 / COMPILER OUTPUT</span><span className="pipe">LEX → PARSE → ANALYZE → LOWER → OPTIMIZE → WASM</span></div><nav>{tabs.map(t=><button key={t} className={active===t?'active':''} onClick={()=>setActive(t)}>{t}</button>)}</nav><div className="stage"><div className="stage-title">{active}</div><Box>{rendered}</Box></div></div></section><footer><div><b>Pipeline</b><span>Lexer</span><span>Symbol table</span><span>CFG parser + recovery</span><span>Semantic checks</span><span>TAC</span><span>Optimization</span><span>Graph coloring</span><span>Assembly</span><span>WAT → Wasm</span></div><p>Wasm output is generated from the validated AST. The runtime uses the browser WebAssembly API and a dynamic WAT compiler.</p></footer></main>}
+import React, { useState, useEffect } from 'react';
+import Header from './components/Header.jsx';
+import PipelineNav from './components/PipelineNav.jsx';
+import CodeEditor from './components/CodeEditor.jsx';
+import TokenTable from './components/TokenTable.jsx';
+import ASTVisualizer from './components/ASTVisualizer.jsx';
+import SymbolTableView from './components/SymbolTableView.jsx';
+import IRViewer from './components/IRViewer.jsx';
+import OptimizerViewer from './components/OptimizerViewer.jsx';
+import RegisterViewer from './components/RegisterViewer.jsx';
+import WatViewer from './components/WatViewer.jsx';
+import ConsoleOutput from './components/ConsoleOutput.jsx';
+import ErrorPanel from './components/ErrorPanel.jsx';
+
+import { compile, runWat, grammar } from './compiler/index.js';
+import { SAMPLE_PROGRAMS } from './examples/samplePrograms.js';
+
+const TABS = [
+  'Tokens',
+  'AST',
+  'Symbol Table',
+  'IR (TAC)',
+  'Optimizer',
+  'Registers & Asm',
+  'WAT / Wasm',
+  'Output & Console'
+];
+
+export default function App() {
+  const [selectedExample, setSelectedExample] = useState(SAMPLE_PROGRAMS[0].id);
+  const [source, setSource] = useState(SAMPLE_PROGRAMS[0].code);
+  const [compilerResult, setCompilerResult] = useState(null);
+  const [activeTab, setActiveTab] = useState('Tokens');
+  const [executionInfo, setExecutionInfo] = useState(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [status, setStatus] = useState('Ready');
+
+  // Initial compilation on mount
+  useEffect(() => {
+    const res = compile(source);
+    setCompilerResult(res);
+    setStatus(res.valid ? 'Ready to execute' : `${res.errors.length} issue(s) detected`);
+  }, []);
+
+  const handleCompile = () => {
+    const res = compile(source);
+    setCompilerResult(res);
+    setExecutionInfo(null);
+    if (res.valid) {
+      setStatus('Compiled successfully');
+    } else {
+      setStatus(`${res.errors.length} issue(s) detected in source`);
+    }
+    return res;
+  };
+
+  const handleRun = async () => {
+    let res = compilerResult;
+    // Recompile if needed
+    if (!res || !res.valid) {
+      res = handleCompile();
+    }
+
+    if (!res.valid) {
+      setStatus('Cannot execute: fix compilation errors first');
+      return;
+    }
+
+    setIsRunning(true);
+    setStatus('Executing WebAssembly in browser VM...');
+    try {
+      const execRes = await runWat(res.wat);
+      setExecutionInfo(execRes);
+      setActiveTab('Output & Console');
+      setStatus(`Wasm executed in ${execRes.executionTimeMs}ms`);
+    } catch (err) {
+      setExecutionInfo({
+        output: [],
+        error: err.message || String(err),
+        executionTimeMs: 0
+      });
+      setActiveTab('Output & Console');
+      setStatus('WebAssembly runtime error');
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const handleSelectExample = (id) => {
+    const sample = SAMPLE_PROGRAMS.find(s => s.id === id);
+    if (sample) {
+      setSelectedExample(id);
+      setSource(sample.code);
+      const res = compile(sample.code);
+      setCompilerResult(res);
+      setExecutionInfo(null);
+      setStatus(res.valid ? `Loaded "${sample.name}"` : `${res.errors.length} issue(s) detected`);
+    }
+  };
+
+  const handleClear = () => {
+    setSource('');
+    setCompilerResult(null);
+    setExecutionInfo(null);
+    setStatus('Ready');
+  };
+
+  return (
+    <div className="app-shell">
+      <Header
+        status={status}
+        isValid={compilerResult?.valid}
+        hasErrors={compilerResult && !compilerResult.valid}
+        errorCount={compilerResult?.errors?.length || 0}
+      />
+
+      <PipelineNav
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        compilerResult={compilerResult}
+      />
+
+      {compilerResult && !compilerResult.valid && (
+        <ErrorPanel errors={compilerResult.errors} source={source} />
+      )}
+
+      <main className="workspace-grid">
+        {/* Left Column: Code Editor */}
+        <section className="column-editor">
+          <CodeEditor
+            source={source}
+            setSource={setSource}
+            selectedExample={selectedExample}
+            onSelectExample={handleSelectExample}
+            onCompile={handleCompile}
+            onRun={handleRun}
+            onClear={handleClear}
+            isRunning={isRunning}
+            isValid={compilerResult?.valid}
+          />
+        </section>
+
+        {/* Right Column: Multi-Stage Inspector */}
+        <section className="column-inspector">
+          <div className="panel inspector-panel">
+            <div className="panel-header inspector-header">
+              <div className="panel-title-group">
+                <span className="panel-step">02</span>
+                <span className="panel-title">COMPILER PIPELINE INSPECTOR</span>
+              </div>
+
+              <div className="inspector-tabs">
+                {TABS.map(tab => (
+                  <button
+                    key={tab}
+                    type="button"
+                    className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
+                    onClick={() => setActiveTab(tab)}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="inspector-stage-content">
+              {activeTab === 'Tokens' && (
+                <TokenTable tokens={compilerResult?.tokens} />
+              )}
+
+              {activeTab === 'AST' && (
+                <ASTVisualizer ast={compilerResult?.ast} grammar={grammar} />
+              )}
+
+              {activeTab === 'Symbol Table' && (
+                <SymbolTableView symbols={compilerResult?.symbols} />
+              )}
+
+              {activeTab === 'IR (TAC)' && (
+                <IRViewer
+                  tac={compilerResult?.tac}
+                  quadruples={compilerResult?.quadruples}
+                />
+              )}
+
+              {activeTab === 'Optimizer' && (
+                <OptimizerViewer
+                  originalTac={compilerResult?.tac}
+                  optimizedTac={compilerResult?.optimized}
+                  optimizations={compilerResult?.optimizations}
+                />
+              )}
+
+              {activeTab === 'Registers & Asm' && (
+                <RegisterViewer
+                  allocation={compilerResult?.allocation}
+                  assembly={compilerResult?.assembly}
+                />
+              )}
+
+              {activeTab === 'WAT / Wasm' && (
+                <WatViewer wat={compilerResult?.wat} />
+              )}
+
+              {activeTab === 'Output & Console' && (
+                <ConsoleOutput
+                  output={executionInfo?.output || []}
+                  executionInfo={executionInfo}
+                  onRun={handleRun}
+                  isRunning={isRunning}
+                  onClear={() => setExecutionInfo(null)}
+                />
+              )}
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer className="app-footer">
+        <div className="footer-content">
+          <div className="footer-col">
+            <strong>Architecture</strong>
+            <span>Handwritten Scanner → Recursive-Descent Parser → Multi-Scope Symbol Table → TAC IR → Constant Optimizer → Graph-Coloring RegAlloc → WAT Emitter → Browser Wasm VM</span>
+          </div>
+          <div className="footer-col">
+            <strong>Standards & Tooling</strong>
+            <span>W3C WebAssembly MVP · WABT Toolchain · React 18 · Vite · Zero external network dependencies</span>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
