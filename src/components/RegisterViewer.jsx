@@ -1,100 +1,65 @@
 import React, { useState } from 'react';
 
 export default function RegisterViewer({ allocation, assembly }) {
-  const [viewMode, setViewMode] = useState('registers'); // 'registers' | 'assembly'
+  const [mode, setMode] = useState('regs');
 
-  if (!allocation || !allocation.variables || allocation.variables.length === 0) {
-    return (
-      <div className="empty-state">
-        <p>No register allocation data. Compile a program with variable assignments to see graph coloring.</p>
-      </div>
-    );
+  if (!allocation?.variables?.length) {
+    return <div className="empty-state">Compile a program with variables to see register allocation.</div>;
   }
 
   const { variables, edges, colors, registerCount, spillCount } = allocation;
 
   return (
-    <div className="reg-container">
-      <div className="stage-toolbar">
-        <div className="view-toggle-buttons">
-          <button
-            type="button"
-            className={`btn-sub ${viewMode === 'registers' ? 'active' : ''}`}
-            onClick={() => setViewMode('registers')}
-          >
-            🎨 Register Allocation & Interference Graph
-          </button>
-          <button
-            type="button"
-            className={`btn-sub ${viewMode === 'assembly' ? 'active' : ''}`}
-            onClick={() => setViewMode('assembly')}
-          >
-            ⚙️ Pseudo-Assembly Code
-          </button>
+    <div className="stage-wrap">
+      <div className="stage-bar">
+        <div className="toggle-group">
+          <button className={`tog-btn ${mode === 'regs' ? 'active' : ''}`} onClick={() => setMode('regs')}>Registers</button>
+          <button className={`tog-btn ${mode === 'asm' ? 'active' : ''}`} onClick={() => setMode('asm')}>Assembly</button>
         </div>
-
-        <div className="stats-badges">
-          <span className="stat-pill">Physical Registers (K): <strong>{registerCount}</strong></span>
-          <span className="stat-pill">Allocated Variables: <strong>{variables.length}</strong></span>
-          <span className="stat-pill">Spills: <strong>{spillCount}</strong></span>
+        <div className="chips">
+          <span className="chip">K = <strong>{registerCount}</strong></span>
+          <span className="chip">Vars <strong>{variables.length}</strong></span>
+          <span className="chip">Spills <strong>{spillCount}</strong></span>
         </div>
       </div>
 
-      {viewMode === 'registers' && (
-        <div className="reg-content">
-          <div className="reg-theory-card">
-            <h4>Chaitin's Graph-Coloring Heuristic</h4>
-            <p>
-              Each variable/temporary represents a graph node. An edge connects two variables if their live ranges
-              overlap (they are simultaneously live). The graph is colored using <strong>K = {registerCount}</strong> register colors (R1–R{registerCount}).
-              Nodes with degree ≥ K that cannot be colored are spilled to memory slots.
-            </p>
+      {mode === 'regs' && (
+        <div className="table-scroll">
+          <div className="info-card">
+            Graph-coloring register allocation with K = {registerCount} registers.
+            Variables sharing a live range get different registers; overflow is spilled to memory.
           </div>
-
-          <div className="table-wrapper">
-            <table className="token-table">
-              <thead>
-                <tr>
-                  <th>Variable / Temp</th>
-                  <th>Assigned Location</th>
-                  <th>Graph Degree</th>
-                  <th>Interfering Variables (Edges)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {variables.map((v) => {
-                  const assigned = colors[v] || '—';
-                  const isSpill = assigned.startsWith('MEM');
-                  const neighbors = edges[v] || [];
-
-                  return (
-                    <tr key={v}>
-                      <td className="cell-code">
-                        <strong>{v}</strong>
-                      </td>
-                      <td>
-                        <span className={`reg-badge ${isSpill ? 'badge-spill' : 'badge-reg'}`}>
-                          {assigned}
-                        </span>
-                      </td>
-                      <td className="cell-num">{neighbors.length}</td>
-                      <td className="cell-code cell-muted">
-                        {neighbors.length > 0 ? neighbors.join(', ') : 'None (no interference)'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Variable</th>
+                <th>Assigned</th>
+                <th>Degree</th>
+                <th>Interferes with</th>
+              </tr>
+            </thead>
+            <tbody>
+              {variables.map(v => {
+                const loc   = colors[v] || '—';
+                const spill = loc.startsWith('MEM');
+                const nbrs  = edges[v] || [];
+                return (
+                  <tr key={v}>
+                    <td className="td-mono"><strong>{v}</strong></td>
+                    <td><span className={`badge ${spill ? 'badge-spill' : 'badge-reg'}`}>{loc}</span></td>
+                    <td className="td-num">{nbrs.length}</td>
+                    <td className="td-dim td-mono">{nbrs.length ? nbrs.join(', ') : 'none'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
-      {viewMode === 'assembly' && (
-        <div className="assembly-content">
-          <pre className="codebox assembly-view">
-            {assembly || '; No assembly generated.'}
-          </pre>
+      {mode === 'asm' && (
+        <div className="table-scroll">
+          <pre className="codebox asm-view">{assembly || '; no assembly'}</pre>
         </div>
       )}
     </div>

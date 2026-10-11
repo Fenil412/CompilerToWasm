@@ -1,64 +1,59 @@
 import React from 'react';
 
 export const PIPELINE_STAGES = [
-  { id: 'tokens', label: '1. Lexer', tab: 'Tokens', desc: 'Token Stream' },
-  { id: 'ast', label: '2. Parser', tab: 'AST', desc: 'Syntax Tree' },
-  { id: 'symbols', label: '3. Semantic', tab: 'Symbol Table', desc: 'Symbol Table' },
-  { id: 'tac', label: '4. IR / TAC', tab: 'IR (TAC)', desc: 'Three-Address Code' },
-  { id: 'opt', label: '5. Optimizer', tab: 'Optimizer', desc: 'Constant Folding' },
-  { id: 'registers', label: '6. RegAlloc', tab: 'Registers & Asm', desc: 'Graph Coloring' },
-  { id: 'wat', label: '7. Wasm Gen', tab: 'WAT / Wasm', desc: 'WebAssembly Text' },
-  { id: 'run', label: '8. Execution', tab: 'Output & Console', desc: 'Wasm Runtime' },
+  { id: 'tokens',    label: 'Lexer',      tab: 'Tokens',           desc: 'Token stream' },
+  { id: 'ast',       label: 'Parser',     tab: 'AST',              desc: 'Syntax tree' },
+  { id: 'symbols',   label: 'Semantic',   tab: 'Symbol Table',     desc: 'Symbol table' },
+  { id: 'tac',       label: 'IR / TAC',   tab: 'IR (TAC)',         desc: '3-address code' },
+  { id: 'opt',       label: 'Optimizer',  tab: 'Optimizer',        desc: 'Const folding' },
+  { id: 'registers', label: 'RegAlloc',   tab: 'Registers & Asm',  desc: 'Graph coloring' },
+  { id: 'wat',       label: 'Wasm Gen',   tab: 'WAT / Wasm',       desc: 'WAT output' },
+  { id: 'run',       label: 'Execute',    tab: 'Output & Console', desc: 'Wasm runtime' },
 ];
 
 export default function PipelineNav({ activeTab, onSelectTab, compilerResult }) {
-  const getStageStatus = (stageId) => {
+  const getStatus = (id) => {
     if (!compilerResult) return 'idle';
     if (!compilerResult.valid) {
-      // Find where errors occurred
       const errs = compilerResult.errors;
-      if (stageId === 'tokens' && errs.some(e => e.kind === 'Lexical')) return 'error';
-      if (stageId === 'ast' && errs.some(e => e.kind === 'Syntax')) return 'error';
-      if (stageId === 'symbols' && errs.some(e => e.kind === 'Semantic')) return 'error';
-      if (['tac', 'opt', 'registers', 'wat', 'run'].includes(stageId)) return 'disabled';
+      if (id === 'tokens'    && errs.some(e => e.kind === 'Lexical'))   return 'error';
+      if (id === 'ast'       && errs.some(e => e.kind === 'Syntax'))    return 'error';
+      if (id === 'symbols'   && errs.some(e => e.kind === 'Semantic'))  return 'error';
+      if (['tac','opt','registers','wat','run'].includes(id))           return 'disabled';
     }
     return 'success';
   };
 
   return (
-    <div className="pipeline-container">
-      <div className="pipeline-title">COMPILER PIPELINE PIPELINE:</div>
+    <nav className="pipeline-nav">
+      <span className="pipeline-label">Pipeline</span>
       <div className="pipeline-steps">
         {PIPELINE_STAGES.map((stage, idx) => {
-          const status = getStageStatus(stage.id);
-          const isActive = activeTab === stage.tab;
-
+          const s = getStatus(stage.id);
+          const active = activeTab === stage.tab;
           return (
             <React.Fragment key={stage.id}>
               <button
                 type="button"
-                className={`pipeline-node ${isActive ? 'active' : ''} ${status}`}
+                className={`pipe-node ${active ? 'active' : ''} ${s}`}
                 onClick={() => onSelectTab(stage.tab)}
-                title={`${stage.label}: ${stage.desc}`}
+                title={stage.desc}
               >
-                <div className="node-icon">
-                  {status === 'success' && <span className="icon-check">✓</span>}
-                  {status === 'error' && <span className="icon-err">✕</span>}
-                  {status === 'idle' && <span className="icon-num">{idx + 1}</span>}
-                  {status === 'disabled' && <span className="icon-dash">—</span>}
-                </div>
-                <div className="node-text">
-                  <span className="node-label">{stage.label}</span>
-                  <span className="node-desc">{stage.desc}</span>
-                </div>
+                <span className="pipe-icon">
+                  {s === 'success'  && '✓'}
+                  {s === 'error'    && '✕'}
+                  {s === 'idle'     && (idx + 1)}
+                  {s === 'disabled' && '–'}
+                </span>
+                <span className="pipe-label">{stage.label}</span>
               </button>
               {idx < PIPELINE_STAGES.length - 1 && (
-                <div className={`pipeline-arrow ${status === 'success' ? 'passed' : ''}`}>→</div>
+                <span className={`pipe-arrow ${s === 'success' ? 'done' : ''}`}>›</span>
               )}
             </React.Fragment>
           );
         })}
       </div>
-    </div>
+    </nav>
   );
 }

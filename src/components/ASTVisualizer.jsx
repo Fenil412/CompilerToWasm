@@ -1,93 +1,73 @@
 import React, { useState } from 'react';
 
-function TreeNode({ node, label, isLast = true }) {
-  const [collapsed, setCollapsed] = useState(false);
+function nodeClass(kind) {
+  if (kind.includes('Declaration')) return 'ast-decl';
+  if (kind.includes('Statement'))   return 'ast-stmt';
+  if (kind.includes('Expression') || kind.includes('Literal')) return 'ast-expr';
+  return 'ast-node';
+}
+
+function summary(node) {
+  switch (node.kind) {
+    case 'VariableDeclaration':  return `${node.varType} ${node.name}`;
+    case 'FunctionDeclaration':  return `${node.name}(${(node.params || []).join(', ')})`;
+    case 'Identifier':           return `"${node.name}"`;
+    case 'NumericLiteral':       return `${node.value}`;
+    case 'BooleanLiteral':       return `${node.value}`;
+    case 'BinaryExpression':
+    case 'LogicalExpression':    return `"${node.op}"`;
+    case 'CallExpression':       return `${node.callee}()`;
+    case 'AssignmentStatement':  return `${node.name} =`;
+    default: return '';
+  }
+}
+
+function TreeNode({ node, label }) {
+  const [open, setOpen] = useState(true);
 
   if (!node || typeof node !== 'object') {
     return (
-      <div className="tree-leaf">
-        {label && <span className="tree-key">{label}: </span>}
-        <span className="tree-primitive">{String(node)}</span>
+      <div className="ast-leaf">
+        {label && <span className="ast-key">{label}: </span>}
+        <span className="ast-val">{String(node)}</span>
       </div>
     );
   }
 
-  // Determine label and details
-  const kind = node.kind || 'Node';
-  const hasChildren = Object.keys(node).some(k => k !== 'kind' && k !== 'loc');
-
-  const getNodeBadgeClass = (k) => {
-    if (k.includes('Declaration')) return 'badge-decl';
-    if (k.includes('Statement')) return 'badge-stmt';
-    if (k.includes('Expression') || k.includes('Literal')) return 'badge-expr';
-    return 'badge-node';
-  };
-
-  const getSummary = () => {
-    if (node.kind === 'VariableDeclaration') return `${node.varType} ${node.name}`;
-    if (node.kind === 'FunctionDeclaration') return `${node.name}(${(node.params || []).join(', ')})`;
-    if (node.kind === 'Identifier') return `name: "${node.name}"`;
-    if (node.kind === 'NumericLiteral') return `value: ${node.value} (${node.numType})`;
-    if (node.kind === 'BooleanLiteral') return `value: ${node.value}`;
-    if (node.kind === 'BinaryExpression') return `op: "${node.op}"`;
-    if (node.kind === 'LogicalExpression') return `op: "${node.op}"`;
-    if (node.kind === 'CallExpression') return `callee: "${node.callee}"`;
-    if (node.kind === 'AssignmentStatement') return `var: "${node.name}"`;
-    return '';
-  };
-
-  const summary = getSummary();
+  const kind     = node.kind || 'Node';
+  const kids     = Object.keys(node).filter(k => k !== 'kind' && k !== 'loc');
+  const hasKids  = kids.length > 0;
+  const sum      = summary(node);
 
   return (
-    <div className="tree-node">
-      <div className="tree-node-header" onClick={() => hasChildren && setCollapsed(!collapsed)}>
-        {hasChildren ? (
-          <span className="tree-toggle">{collapsed ? '▶' : '▼'}</span>
-        ) : (
-          <span className="tree-bullet">•</span>
-        )}
-
-        {label && <span className="tree-key">{label}: </span>}
-
-        <span className={`tree-kind-badge ${getNodeBadgeClass(kind)}`}>
-          {kind}
-        </span>
-
-        {summary && <span className="tree-summary">{summary}</span>}
-
-        {node.loc && (
-          <span className="tree-loc">L{node.loc.line}:C{node.loc.column}</span>
-        )}
+    <div className="ast-node-wrap">
+      <div className="ast-row" onClick={() => hasKids && setOpen(o => !o)} style={{ cursor: hasKids ? 'pointer' : 'default' }}>
+        <span className="ast-toggle">{hasKids ? (open ? '▼' : '▶') : '•'}</span>
+        {label && <span className="ast-key">{label}: </span>}
+        <span className={`ast-badge ${nodeClass(kind)}`}>{kind}</span>
+        {sum && <span className="ast-sum">{sum}</span>}
+        {node.loc && <span className="ast-loc">L{node.loc.line}</span>}
       </div>
 
-      {!collapsed && hasChildren && (
-        <div className="tree-children">
-          {Object.entries(node).map(([key, val]) => {
-            if (key === 'kind' || key === 'loc') return null;
-
-            if (Array.isArray(val)) {
+      {open && hasKids && (
+        <div className="ast-children">
+          {kids.map(k => {
+            const v = node[k];
+            if (Array.isArray(v)) {
               return (
-                <div key={key} className="tree-array-group">
-                  <div className="tree-key-header">
-                    <span className="tree-key">{key}</span> [{val.length}]:
-                  </div>
-                  <div className="tree-array-items">
-                    {val.map((item, idx) => (
-                      <TreeNode key={idx} node={item} label={`${key}[${idx}]`} />
-                    ))}
-                  </div>
+                <div key={k} className="ast-array">
+                  <div className="ast-key">{k} [{v.length}]:</div>
+                  {v.map((item, i) => <TreeNode key={i} node={item} label={`${k}[${i}]`} />)}
                 </div>
               );
             }
-
-            if (typeof val === 'object' && val !== null) {
-              return <TreeNode key={key} node={val} label={key} />;
+            if (typeof v === 'object' && v !== null) {
+              return <TreeNode key={k} node={v} label={k} />;
             }
-
             return (
-              <div key={key} className="tree-leaf">
-                <span className="tree-key">{key}: </span>
-                <span className="tree-primitive">{String(val)}</span>
+              <div key={k} className="ast-leaf">
+                <span className="ast-key">{k}: </span>
+                <span className="ast-val">{String(v)}</span>
               </div>
             );
           })}
@@ -98,71 +78,40 @@ function TreeNode({ node, label, isLast = true }) {
 }
 
 export default function ASTVisualizer({ ast, grammar }) {
-  const [viewMode, setViewMode] = useState('visual'); // 'visual' | 'json' | 'grammar'
+  const [mode, setMode] = useState('tree');
 
   if (!ast) {
-    return (
-      <div className="empty-state">
-        <p>No AST generated yet. Compile your code to perform syntax analysis.</p>
-      </div>
-    );
+    return <div className="empty-state">Compile your code to see the syntax tree.</div>;
   }
 
   return (
-    <div className="ast-container">
-      <div className="stage-toolbar">
-        <div className="view-toggle-buttons">
-          <button
-            type="button"
-            className={`btn-sub ${viewMode === 'visual' ? 'active' : ''}`}
-            onClick={() => setViewMode('visual')}
-          >
-            🌳 Visual Tree
-          </button>
-          <button
-            type="button"
-            className={`btn-sub ${viewMode === 'json' ? 'active' : ''}`}
-            onClick={() => setViewMode('json')}
-          >
-            {'{ }'} Raw JSON
-          </button>
-          <button
-            type="button"
-            className={`btn-sub ${viewMode === 'grammar' ? 'active' : ''}`}
-            onClick={() => setViewMode('grammar')}
-          >
-            📜 EBNF Grammar
-          </button>
+    <div className="stage-wrap">
+      <div className="stage-bar">
+        <div className="toggle-group">
+          <button className={`tog-btn ${mode === 'tree' ? 'active' : ''}`} onClick={() => setMode('tree')}>Tree</button>
+          <button className={`tog-btn ${mode === 'json' ? 'active' : ''}`} onClick={() => setMode('json')}>JSON</button>
+          <button className={`tog-btn ${mode === 'grammar' ? 'active' : ''}`} onClick={() => setMode('grammar')}>Grammar</button>
         </div>
-
-        {viewMode === 'json' && (
-          <button
-            type="button"
-            className="btn-sub"
-            onClick={() => navigator.clipboard.writeText(JSON.stringify(ast, null, 2))}
-          >
-            📋 Copy JSON
+        {mode === 'json' && (
+          <button type="button" className="btn-sm" onClick={() => navigator.clipboard.writeText(JSON.stringify(ast, null, 2))}>
+            Copy
           </button>
         )}
       </div>
 
-      <div className="ast-body">
-        {viewMode === 'visual' && (
-          <div className="tree-view-wrapper">
-            <TreeNode node={ast} label="Root" />
+      <div className="table-scroll ast-scroll">
+        {mode === 'tree' && (
+          <div className="ast-tree">
+            <TreeNode node={ast} label="root" />
           </div>
         )}
-
-        {viewMode === 'json' && (
-          <pre className="codebox json-view">
-            {JSON.stringify(ast, null, 2)}
-          </pre>
+        {mode === 'json' && (
+          <pre className="codebox">{JSON.stringify(ast, null, 2)}</pre>
         )}
-
-        {viewMode === 'grammar' && (
-          <div className="grammar-doc-wrapper">
-            <h3>Context-Free Grammar (EBNF Specification)</h3>
-            <pre className="codebox grammar-box">{grammar}</pre>
+        {mode === 'grammar' && (
+          <div className="grammar-wrap">
+            <div className="grammar-title">EBNF Grammar</div>
+            <pre className="codebox">{grammar}</pre>
           </div>
         )}
       </div>

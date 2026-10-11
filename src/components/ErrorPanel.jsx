@@ -1,59 +1,34 @@
 import React from 'react';
 
+const KIND_CLASS = {
+  Lexical:  'err-lex',
+  Syntax:   'err-syn',
+  Semantic: 'err-sem',
+};
+
 export default function ErrorPanel({ errors, source }) {
-  if (!errors || errors.length === 0) return null;
-
-  const sourceLines = source ? source.split('\n') : [];
-
-  const getBadgeClass = (kind) => {
-    switch (kind) {
-      case 'Lexical': return 'badge-lex-err';
-      case 'Syntax': return 'badge-syntax-err';
-      case 'Semantic': return 'badge-semantic-err';
-      default: return 'badge-runtime-err';
-    }
-  };
+  if (!errors?.length) return null;
+  const lines = source ? source.split('\n') : [];
 
   return (
-    <div className="error-panel-container">
-      <div className="error-header">
-        <span className="error-icon">⚠️</span>
-        <h4>Compilation Diagnostics ({errors.length} issue{errors.length > 1 ? 's' : ''} found)</h4>
-      </div>
-
+    <div className="error-panel">
+      <span className="error-panel-title">⚠ {errors.length} error{errors.length > 1 ? 's' : ''}</span>
       <div className="error-list">
-        {errors.map((err, idx) => {
-          const lineNum = err.line ?? 1;
-          const colNum = err.column ?? 1;
-          const errorLine = sourceLines[lineNum - 1] || '';
-          const pointerIndent = ' '.repeat(Math.max(0, colNum - 1));
-
+        {errors.map((err, i) => {
+          const line = err.line ?? 1;
+          const col  = err.column ?? 1;
+          const src  = lines[line - 1] || '';
+          const pad  = ' '.repeat(Math.max(0, col - 1));
+          const cls  = KIND_CLASS[err.kind] || 'err-syn';
           return (
-            <div key={idx} className="error-card">
-              <div className="error-card-header">
-                <span className={`error-kind-badge ${getBadgeClass(err.kind)}`}>
-                  {err.kind || 'Syntax'} Error
-                </span>
-                <span className="error-loc">
-                  Line {lineNum}, Column {colNum}
-                </span>
+            <div key={i} className="error-item">
+              <div className="error-meta">
+                <span className={`err-tag ${cls}`}>{err.kind || 'Syntax'}</span>
+                <span className="err-loc">Line {line}:{col}</span>
               </div>
-
-              <div className="error-message">
-                {err.message}
-              </div>
-
-              {errorLine && (
-                <div className="error-snippet">
-                  <div className="snippet-line">
-                    <span className="snippet-num">{lineNum} |</span>
-                    <span className="snippet-code">{errorLine}</span>
-                  </div>
-                  <div className="snippet-pointer">
-                    <span className="snippet-num">  |</span>
-                    <span className="pointer-chars">{pointerIndent}^</span>
-                  </div>
-                </div>
+              <div className="err-msg">{err.message}</div>
+              {src && (
+                <pre className="err-snippet">{line} | {src}{'\n'}  | {pad}^</pre>
               )}
             </div>
           );
